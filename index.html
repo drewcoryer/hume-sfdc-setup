@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta name="referrer" content="no-referrer"/>
+<title>Salesforce connection setup</title>
+<style>
+  body{font-family:system-ui,-apple-system,sans-serif;max-width:34rem;margin:3rem auto;padding:0 1.25rem;color:#111;line-height:1.45}
+  h1{font-size:1.35rem;margin:0 0 .5rem}
+  h2{font-size:1rem;margin:1.75rem 0 .25rem}
+  p{color:#444;margin:.4rem 0 1rem}
+  ol{color:#444;padding-left:1.25rem;margin:.4rem 0 1rem}
+  ol li{margin:.3rem 0}
+  label{display:block;font-weight:600;margin:1rem 0 .35rem;font-size:.9rem}
+  input,select{width:100%;box-sizing:border-box;padding:.65rem .75rem;border:1px solid #ccc;border-radius:8px;font:inherit;background:#fff}
+  button{margin-top:1.25rem;width:100%;padding:.75rem 1rem;border:0;border-radius:8px;background:#1a1a2e;color:#fff;font:inherit;font-weight:600;cursor:pointer}
+  button:disabled{opacity:.6;cursor:wait}
+  .hint{font-size:.85rem;color:#666;margin-top:.25rem}
+  .err{color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;padding:.75rem 1rem;border-radius:8px;display:none}
+  .warn{color:#92400e;background:#fffbeb;border:1px solid #fde68a;padding:.75rem 1rem;border-radius:8px;display:none}
+  .ok{background:#ecfdf5;border:1px solid #a7f3d0;padding:1rem 1.1rem;border-radius:10px;display:none}
+  code{background:#f3f4f6;padding:0 .25rem;border-radius:4px;font-size:.9em}
+</style>
+</head>
+<body>
+  <div id="formWrap">
+    <h1>Connect Salesforce</h1>
+    <p>For a Salesforce admin. The values go straight into the backend. Drew does not see them.</p>
+
+    <h2>Before you fill this in</h2>
+    <ol>
+      <li>Create an integration user (or pick an existing one) with <b>API Enabled</b>, <b>Create and Edit on Lead and Task</b>, and <b>Read on Product2 and PricebookEntry</b>.</li>
+      <li>In Setup, create an <b>External Client App</b> (App Manager or External Client App Manager) or a <b>Connected App</b>.</li>
+      <li>Turn on <b>OAuth</b>, add the scope <code>Manage user data via APIs (api)</code>, and check <b>Enable Client Credentials Flow</b>. Any callback URL works, for example <code>https://localhost/callback</code>.</li>
+      <li>In the app's policies, set <b>Run As</b> (Client Credentials Flow user) to the integration user.</li>
+      <li>Copy the <b>Consumer Key</b> and <b>Consumer Secret</b> and paste them below. New apps can take up to 10 minutes before the login works.</li>
+    </ol>
+
+    <p class="err" id="err"></p>
+    <p class="warn" id="warn"></p>
+    <form id="f">
+      <label for="instance_url">Instance URL</label>
+      <input id="instance_url" type="url" autocomplete="off" required placeholder="https://yourcompany.my.salesforce.com"/>
+      <p class="hint">Setup, then My Domain, then Current My Domain URL. Use the .my.salesforce.com address, not login.salesforce.com.</p>
+
+      <label for="auth_type">Auth type</label>
+      <select id="auth_type">
+        <option value="client_credentials" selected>Client Credentials (Connected App or External Client App), recommended</option>
+        <option value="other">Something else (Drew will follow up)</option>
+      </select>
+
+      <label for="client_id">Consumer Key</label>
+      <input id="client_id" type="password" autocomplete="off" required placeholder="Consumer Key"/>
+
+      <label for="client_secret">Consumer Secret</label>
+      <input id="client_secret" type="password" autocomplete="off" required placeholder="Consumer Secret"/>
+      <p class="hint">App Manager, open the app, then Manage Consumer Details (or Settings, then OAuth Settings, then Consumer Key and Secret).</p>
+
+      <h2>Optional</h2>
+      <p class="hint">Leave blank if you are not sure. These can be set later.</p>
+
+      <label for="product_interest">Product Interest value</label>
+      <input id="product_interest" type="text" autocomplete="off" placeholder="Picklist value to set on new Leads"/>
+
+      <label for="lead_source">Lead Source value</label>
+      <input id="lead_source" type="text" autocomplete="off" placeholder="For example: Outbound Email"/>
+
+      <label for="product_name">Expression Measurement Product name</label>
+      <input id="product_name" type="text" autocomplete="off" placeholder="Product name exactly as in Salesforce"/>
+
+      <label for="pricebook_name">Price book name</label>
+      <input id="pricebook_name" type="text" autocomplete="off" placeholder="For example: Standard Price Book"/>
+
+      <button type="submit" id="btn">Save and test login</button>
+    </form>
+  </div>
+  <div class="ok" id="ok">
+    <h1 id="okTitle">Connected</h1>
+    <p id="okMsg">Saved. Salesforce accepted the login. This link can no longer be used.</p>
+    <p>You can close this page.</p>
+  </div>
+<script>
+(function () {
+  var params = new URLSearchParams(location.search);
+  var token = params.get("t") || "";
+  var api = "https://hwvmhznqnsfshdrthidj.supabase.co/functions/v1/sfdc-setup";
+  var form = document.getElementById("f");
+  var err = document.getElementById("err");
+  var warn = document.getElementById("warn");
+  var ok = document.getElementById("ok");
+  var okMsg = document.getElementById("okMsg");
+  var wrap = document.getElementById("formWrap");
+  var btn = document.getElementById("btn");
+  function v(id) { return document.getElementById(id).value.trim(); }
+  function showErr(msg) { warn.style.display = "none"; err.style.display = "block"; err.textContent = msg; }
+  function reset() { btn.disabled = false; btn.textContent = "Save and test login"; }
+  if (!token) {
+    showErr("Missing setup link. Use the full URL Drew sent you.");
+    form.style.display = "none";
+    return;
+  }
+  fetch(api + "?t=" + encodeURIComponent(token), { headers: { "Accept": "application/json" } })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (!d || !d.link_status || d.link_status === "valid") return;
+      var m = d.link_status === "used" ? "This link was already used and Salesforce is connected. Ask Drew for a new link if you need to change anything."
+        : d.link_status === "expired" ? "This link expired. Ask Drew for a new one."
+        : "Invalid setup link. Use the full URL Drew sent you.";
+      showErr(m);
+      form.style.display = "none";
+    })
+    .catch(function () {});
+  form.addEventListener("submit", async function (e) {
+    e.preventDefault();
+    err.style.display = "none";
+    warn.style.display = "none";
+    btn.disabled = true;
+    btn.textContent = "Saving and testing...";
+    try {
+      var res = await fetch(api + "?t=" + encodeURIComponent(token), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({
+          t: token,
+          instance_url: v("instance_url"),
+          auth_type: document.getElementById("auth_type").value,
+          client_id: v("client_id"),
+          client_secret: v("client_secret"),
+          product_interest: v("product_interest"),
+          lead_source: v("lead_source"),
+          product_name: v("product_name"),
+          pricebook_name: v("pricebook_name")
+        })
+      });
+      var data = null;
+      try { data = await res.json(); } catch (_) {}
+      if (!res.ok || !data || data.ok !== true) {
+        showErr((data && data.error) || ("Save failed (" + res.status + ")"));
+        reset();
+        return;
+      }
+      if (data.auth_ok === false) {
+        warn.style.display = "block";
+        warn.textContent = (data.message || "Saved, but Salesforce rejected the login.") +
+          " Fix the setting in Salesforce and submit again. This link stays open until the login works.";
+        reset();
+        return;
+      }
+      if (data.auth_ok === null) {
+        document.getElementById("okTitle").textContent = "Saved";
+        okMsg.textContent = data.message || "Saved. Login was not tested for this auth type.";
+      }
+      wrap.style.display = "none";
+      ok.style.display = "block";
+    } catch (ex) {
+      showErr("Network error. Try again, or ask Drew for a new link.");
+      reset();
+    }
+  });
+})();
+</script>
+</body>
+</html>
